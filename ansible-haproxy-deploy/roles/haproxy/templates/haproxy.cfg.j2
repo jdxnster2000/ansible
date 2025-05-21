@@ -1,0 +1,20 @@
+frontend http_front
+    bind *:80
+    acl is_static path_beg /static /images /javascript /stylesheets
+    use_backend static_backend if is_static
+    default_backend app_backend
+
+backend static_backend
+    server static_server 127.0.0.1:8081 maxconn 200
+
+backend app_backend
+    server app_server 127.0.0.1:8080 maxconn 200
+
+# Optional: Add logging
+log /dev/log local0
+log /dev/log local1 notice
+
+# Optional: Set timeouts
+timeout client 30s
+timeout server 30s
+timeout connect 5s

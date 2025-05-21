@@ -1,0 +1,26 @@
+---
+- name: Install Socat on HAProxy Servers
+  hosts: linuxservers
+  become: yes  # Run as sudo
+  tasks:
+    - name: Install Socat
+      apt:
+        name: socat
+        state: present
+        update_cache: yes
+
+- name: Install HAProxy on HAProxy Servers
+  hosts: linuxservers
+  become: yes
+  tasks:
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+        update_cache: yes
+          # - template:
+          # dest: "/etc/haproxy/haproxy.cfg"
+          # src: "haproxy.cfg"
+    - service:
+       name: "haproxy"
+       state: restarted

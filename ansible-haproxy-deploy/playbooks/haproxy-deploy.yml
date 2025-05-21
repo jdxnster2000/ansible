@@ -1,0 +1,4 @@
+- hosts: linuxservers
+  become: yes
+  roles:
+    - haproxy

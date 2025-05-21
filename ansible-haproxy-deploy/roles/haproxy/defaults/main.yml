@@ -1,0 +1,11 @@
+# Default variables for HAProxy role
+
+haproxy_backend_servers:
+  - name: "backend1"
+    address: "172.16.0.7:80"
+
+haproxy_frontend_port: 8081
+haproxy_mode: "http"
+haproxy_timeout_client: "30s"
+haproxy_timeout_server: "30s"
+haproxy_timeout_connect: "5s"
