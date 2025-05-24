@@ -1,0 +1,64 @@
+---
+- name: Install and secure MySQL (MariaDB) on Ubuntu
+  hosts: linuxserver
+  become: yes
+  vars:
+    mysql_root_password: "Trustme2!"  # Change this to a strong password
+
+  tasks:
+    - name: Install MariaDB server and Python MySQL bindings
+      apt:
+        name:
+          - mariadb-server
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Ensure MariaDB is running
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Set root password and ensure root can login with password
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        check_implicit_admin: yes
+        state: present
+        update_password: always
+
+    - name: Remove anonymous users
+      mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Remove test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Disallow remote root login
+      mysql_user:
+        name: root
+        host: "{{ item }}"
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop:
+        - "{{ ansible_hostname }}"
+        - '%'
+
+    - name: Reload privilege tables
+      mysql_privs:
+        privs: '*.*:USAGE'
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"

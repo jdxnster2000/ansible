@@ -1,0 +1,79 @@
+---
+- name: Install Semaphore UI on Ubuntu 22.04
+  hosts: linuxserver
+  become: yes
+
+  vars:
+    semaphore_version: "v2.9.68"
+    semaphore_user: "semaphore"
+    semaphore_db: "semaphore"
+    semaphore_db_user: "semaphore"
+    semaphore_db_password: "StrongSemaphorePass123!"  # Change this!
+    semaphore_admin_name: "admin"
+    semaphore_admin_email: "admin@example.com"
+    semaphore_admin_password: "AdminPass123!"         # Change this!
+    semaphore_admin: "admin"
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - git
+          - mariadb-server
+          - gcc
+          - make
+          - sqlite3
+          - libmariadb-dev
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Ensure MariaDB is running
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Create Semaphore database
+      mysql_db:
+        name: "{{ semaphore_db }}"
+        state: present
+
+    - name: Create Semaphore DB user
+      mysql_user:
+        name: "{{ semaphore_db_user }}"
+        password: "{{ semaphore_db_password }}"
+        priv: "{{ semaphore_db }}.*:ALL"
+        state: present
+
+    - name: Download Semaphore binary
+      get_url:
+        url: "https://github.com/ansible-semaphore/semaphore/releases/download/{{ semaphore_version }}/semaphore_{{ semaphore_version | regex_replace('^v', '') }}_linux_amd64.deb"
+        dest: "/tmp/semaphore.deb"
+
+    - name: Install Semaphore
+      apt:
+        deb: "/tmp/semaphore.deb"
+
+    - name: Initialize Semaphore database
+      command: >
+        semaphore setup --config /etc/semaphore/config.json
+      args:
+        creates: /etc/semaphore/config.json
+      environment:
+        SEMAPHORE_DB_HOST: "127.0.0.1"
+        SEMAPHORE_DB_PORT: "3306"
+        SEMAPHORE_DB_USER: "{{ semaphore_db_user }}"
+        SEMAPHORE_DB_PASS: "{{ semaphore_db_password }}"
+        SEMAPHORE_DB_NAME: "{{ semaphore_db }}"
+        SEMAPHORE_ADMIN_NAME: "{{ semaphore_admin_name }}"
+        SEMAPHORE_ADMIN_EMAIL: "{{ semaphore_admin_email }}"
+        SEMAPHORE_ADMIN_PASSWORD: "{{ semaphore_admin_password }}"
+        SEMAPHORE_ADMIN: "{{ semaphore_admin }}"
+
+    - name: Start and enable Semaphore service
+      systemd:
+        name: semaphore
+        state: started
+        enabled: yes

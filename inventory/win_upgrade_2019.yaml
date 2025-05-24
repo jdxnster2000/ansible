@@ -1,0 +1,65 @@
+---
+- hosts: win
+  gather_facts: false
+  tasks:
+    - name: Mounting ISO image file with drive
+      win_shell: |
+        $isoDirectory = @("C:\Windows_Server_2016_Datacenter_EVAL_en-us_14393_refresh.ISO","C:\17763.3650.221105-1748.rs5_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso")
+        $driveLetterFile = "C:\driveletter.txt"
+        $osName = (Get-ComputerInfo).OsName
+        Write-Host "Detected OS Name: $osName"
+        # Read the stored drive letter from the file
+        $storedDriveLetter = Get-Content $driveLetterFile -ErrorAction SilentlyContinue
+        # If no drive letter is stored or the stored drive letter is not valid, proceed with mounting
+        if (-not $storedDriveLetter -or (Get-Volume -DriveLetter $storedDriveLetter -ErrorAction SilentlyContinue) -eq $null) {
+            foreach ($isoFile in $isoDirectory) {
+                if ($osName -like '*Windows Server 2016*' -and $isoFile -like '*221105*') {
+                    Mount-DiskImage -ImagePath $isoFile
+                    $isoImage = Get-DiskImage -ImagePath $isoFile | Get-Volume
+                    $isoDrive = [string]$isoImage.DriveLetter + ":"
+                    Write-Host "Mounted ISO File: $isoFile"
+                    Write-Host "Mounted Volume Drive: $isoDrive"
+                    # Store the mounted drive letter in the file
+                    $isoDrive | Out-File -FilePath $driveLetterFile
+                    break  # exit the loop once the correct ISO is mounted
+                }
+                elseif ($osName -like '*Windows Server 2019*' -and $isoFile -like '*2016*') {
+                    Mount-DiskImage -ImagePath $isoFile
+                    $isoImage = Get-DiskImage -ImagePath $isoFile | Get-Volume
+                    $isoDrive = [string]$isoImage.DriveLetter + ":"
+                    Write-Host "Mounted ISO File: $isoFile"
+                    Write-Host "Mounted Volume Drive: $isoDrive"
+                    # Store the mounted drive letter in the file
+                    $isoDrive | Out-File -FilePath $driveLetterFile
+                    break  # exit the loop once the correct ISO is mounted
+                }
+            }
+        } else {
+            # Use the stored drive letter without mounting
+            $isoDrive = $storedDriveLetter
+            Write-Host "Using previously mounted Volume Drive: $isoDrive"
+        }
+      register: mount_status
+      tags:
+        - mount
+
+    - name: Locate setup.exe file path
+      win_shell: |
+        $setupPath = Join-Path -Path "{{ mount_status.stdout_lines[-1].split(': ')[1] }}" -ChildPath 'setup.exe'
+        Write-Output "Setup.exe Path: $setupPath"
+      register: path
+
+    - name: location of ISO image file along with executable
+      debug:
+        var: path.stdout_lines
+      tags:
+        - path
+
+    - name: Running setup.exe file
+          #win_command: X:\setup.exe /auto upgrade /imageindex 4
+      #win_command: X:\setup.exe /auto upgrade /quiet /compat ignorewarning /imageindex 4 /dynamicupdate disable
+      win_shell: |
+        $setupPath = Join-Path -Path "{{ mount_status.stdout_lines[-1].split(': ')[1] }}" -ChildPath 'setup.exe'
+          Write-Output "Path of setup.exe file: $setupPath"
+          Invoke-Expression -Command "$setupPath /copylogs upgrade /imageindex 4 -Wait"
+          #Invoke-Expression -Command "$setupPath /auto upgrade /quiet /imageindex 3"
