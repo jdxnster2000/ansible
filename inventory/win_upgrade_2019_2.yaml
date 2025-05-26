@@ -1,0 +1,53 @@
+---
+- name: In-place upgrade Windows Server 2016 to 2019
+  hosts: winserver
+  gather_facts: no
+  vars:
+    iso_url: "C:\\17763.3650.221105-1748.rs5_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso"  # Update this path
+    iso_dest: "C:\\Windows_Server_2019.iso"
+    mount_drive: "E:"
+  tasks:
+#    - name: Copy Windows Server 2019 ISO to server
+#      win_copy:
+#        src: "{{ iso_url }}"
+#        dest: "{{ iso_dest }}"
+
+#    - name: Mount ISO
+#      win_disk_image:
+#        image_path: "{{ iso_url }}"
+#        state: present
+
+#    - name: Create temp folder if it doesn't exist
+#      ansible.windows.win_file:
+#        path: C:\Temp
+#        state: directory
+
+    - name: get computer information
+      ansible.windows.win_powershell:
+        script: |
+           Get-ComputerInfo -Property WindowsBuildLabEx,WindowsEditionID | Out-File -FilePath C:\temp\computerinfo.txt
+
+    - name: get system information
+      ansible.windows.win_powershell:
+        script: |
+          systeminfo.exe | Out-File -FilePath C:\temp\systeminfo.txt
+
+    - name: get computer information
+      ansible.windows.win_powershell:
+        script: |
+          ipconfig /all | Out-File -FilePath C:\temp\ipconfig.txt
+
+#    - name: Start in-place upgrade (unattended)
+#      win_command: >
+#        {{ mount_drive }}\\setup.exe /auto upgrade /quiet /noreboot /dynamicupdate enable /compat ignorewarning
+#      args:
+#        creates: "C:\\$WINDOWS.~BT"
+
+#    - name: Reboot for upgrade
+#      win_reboot:
+#        reboot_timeout: 7200
+#        msg: "Rebooting for Windows Server upgrade..."
+#
+#    - name: Wait for server to finish upgrade and come back online
+#      wait_for_connection:
+#        timeout: 3600

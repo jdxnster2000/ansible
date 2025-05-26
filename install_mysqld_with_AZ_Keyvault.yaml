@@ -1,0 +1,69 @@
+---
+- name: Install and secure MySQL (MariaDB) on Ubuntu using Azure Key Vault secret
+  hosts: linuxserver
+  become: yes
+  vars:
+    azure_keyvault_name: "my-keyvault"           # Change to your Key Vault name
+    azure_keyvault_secret: "mysql-root-password" # Change to your secret name
+
+  tasks:
+    - name: Get MySQL root password from Azure Key Vault
+      set_fact:
+        mysql_root_password: "{{ lookup('azure.azcollection.azure_keyvault_secret', azure_keyvault_secret, vault_url='https://'+azure_keyvault_name+'.vault.azure.net/') }}"
+
+    - name: Install MariaDB server and Python MySQL bindings
+      apt:
+        name:
+          - mariadb-server
+          - python3-pymysql
+        state: present
+        update_cache: yes
+
+    - name: Ensure MariaDB is running
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Set root password and ensure root can login with password
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        check_implicit_admin: yes
+        state: present
+        update_password: always
+
+    - name: Remove anonymous users
+      mysql_user:
+        name: ''
+        host_all: yes
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Remove test database
+      mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Disallow remote root login
+      mysql_user:
+        name: root
+        host: "{{ item }}"
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop:
+        - "{{ ansible_hostname }}"
+        - '%'
+
+    - name: Reload privilege tables
+      mysql_privs:
+        privs: '*.*:USAGE'
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"

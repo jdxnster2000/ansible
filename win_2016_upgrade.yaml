@@ -1,3 +1,5 @@
+### Requires ansible-galaxy collection install ansible.windows
+
 ---
 - name: In-place upgrade Windows Server 2016 to 2019
   hosts: winserver
@@ -16,6 +18,18 @@
       win_disk_image:
         image_path: "{{ iso_dest }}"
         state: present
+
+    - name: Create temp folder if it doesn't exist
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+
+    - name: get computer information
+      win_command:
+        script: |
+          Get-ComputerInfo -Property WindowsBuildLabEx,WindowsEditionID | Out-File -FilePath "C:\temp\computerinfo.txt" 
+          systeminfo.exe | Out-File -FilePath "C:\temp\systeminfo.txt"
+          ipconfig /all | Out-File -FilePath "C:\temp\ipconfig.txt"
 
     - name: Start in-place upgrade (unattended)
       win_command: >
