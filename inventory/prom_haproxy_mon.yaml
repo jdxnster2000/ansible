@@ -1,0 +1,145 @@
+---
+- name: Install Prometheus exporters for HAProxy and system monitoring
+  hosts: haproxy
+  become: yes
+
+  vars:
+    node_exporter_version: "1.8.1"
+    haproxy_exporter_version: "0.16.0"
+    node_exporter_user: node_exporter
+    haproxy_exporter_user: haproxy_exporter
+    haproxy_stats_user: "prom"
+    haproxy_stats_pass: "prompass"
+    haproxy_stats_port: 8404
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - wget
+          - tar
+        state: present
+        update_cache: yes
+
+    - name: Create node_exporter user
+      user:
+        name: "{{ node_exporter_user }}"
+        shell: /usr/sbin/nologin"
+        system: yes
+        create_home: no
+
+    - name: Download node_exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/node_exporter.tar.gz"
+        mode: "0644"
+
+    - name: Extract node_exporter
+      unarchive:
+        src: "/tmp/node_exporter.tar.gz"
+        dest: "/tmp/"
+        remote_src: yes
+
+    - name: Copy node_exporter binary
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create systemd service for node_exporter
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          After=network.target
+
+          [Service]
+          User={{ node_exporter_user }}
+          Group={{ node_exporter_user }}
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start node_exporter
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+
+    - name: Create haproxy_exporter user
+      user:
+        name: "{{ haproxy_exporter_user }}"
+        shell: /usr/sbin/nologin"
+        system: yes
+        create_home: no
+
+    - name: Download haproxy_exporter
+      get_url:
+        url: "https://github.com/prometheus/haproxy_exporter/releases/download/v{{ haproxy_exporter_version }}/haproxy_exporter-{{ haproxy_exporter_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/haproxy_exporter.tar.gz"
+        mode: "0644"
+
+    - name: Extract haproxy_exporter
+      unarchive:
+        src: "/tmp/haproxy_exporter.tar.gz"
+        dest: "/tmp/"
+        remote_src: yes
+
+    - name: Copy haproxy_exporter binary
+      copy:
+        src: "/tmp/haproxy_exporter-{{ haproxy_exporter_version }}.linux-amd64/haproxy_exporter"
+        dest: /usr/local/bin/haproxy_exporter
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure HAProxy stats are enabled
+      lineinfile:
+        path: /etc/haproxy/haproxy.cfg
+        insertafter: "^defaults"
+        line: |
+          listen stats
+              bind *:{{ haproxy_stats_port }}
+              mode http
+              stats enable
+              stats uri /stats
+              stats refresh 10s
+              stats auth {{ haproxy_stats_user }}:{{ haproxy_stats_pass }}
+      notify: Restart haproxy
+
+    - name: Create systemd service for haproxy_exporter
+      copy:
+        dest: /etc/systemd/system/haproxy_exporter.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus HAProxy Exporter
+          After=network.target
+
+          [Service]
+          User={{ haproxy_exporter_user }}
+          Group={{ haproxy_exporter_user }}
+          Type=simple
+          ExecStart=/usr/local/bin/haproxy_exporter \
+            --haproxy.scrape-uri="http://{{ haproxy_stats_user }}:{{ haproxy_stats_pass }}@localhost:{{ haproxy_stats_port }}/stats;csv"
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start haproxy_exporter
+      systemd:
+        name: haproxy_exporter
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart haproxy
+      service:
+        name: haproxy
+        state: restarted

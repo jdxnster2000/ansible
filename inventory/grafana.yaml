@@ -1,0 +1,44 @@
+---
+- name: Install Grafana on Ubuntu
+  hosts: linuxserver
+  become: yes
+
+  tasks:
+    - name: Install required dependencies
+      apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+        state: present
+        update_cache: yes
+
+    - name: Add Grafana APT key
+      apt_key:
+        url: https://apt.grafana.com/gpg.key
+        state: present
+
+    - name: Add Grafana APT repository
+      apt_repository:
+        repo: "deb https://apt.grafana.com stable main"
+        state: present
+        filename: grafana
+
+    - name: Install Grafana
+      apt:
+        name: grafana
+        state: present
+        update_cache: yes
+
+    - name: Enable and start Grafana service
+      systemd:
+        name: grafana-server
+        enabled: yes
+        state: started
+
+    # Optional: Open firewall port 3000 (uncomment if using UFW)
+    # - name: Allow Grafana port through UFW
+    #   ufw:
+    #     rule: allow
+    #     port: 3000
+    #     proto: tcp

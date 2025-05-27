@@ -117,3 +117,25 @@ Install chocolatey - reboot if chocolatey not installed at first attempt
        state: latest
        ignore_checksums: yes
 
+
+
+HA proxy include - prometheus exporter
+frontend stats
+    bind *:8404
+    http-request use-service prometheus-exporter if { path /metrics }
+    stats enable
+    stats uri /stats
+    stats refresh 10s
+https://github.com/prometheus/haproxy_exporter?tab=readme-ov-file#official-prometheus-exporter
+
+
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['your_ubuntu_server_ip:9100']
+
+  - job_name: 'haproxy_exporter'
+    static_configs:
+      - targets: ['your_ubuntu_server_ip:9101']
+
+      
