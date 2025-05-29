@@ -2,6 +2,10 @@
 - name: Install Grafana on Ubuntu
   hosts: linuxserver
   become: yes
+  vars:
+    grafana_ini_path: /etc/grafana/grafana.ini
+    grafana_server_name: "grafana.example.com"
+    grafana_root_url: "https://grafana.example.com"
 
   tasks:
     - name: Install required dependencies
@@ -30,6 +34,22 @@
         state: present
         update_cache: yes
 
+    - name: Ensure grafana.ini has correct server name
+      ini_file:
+        path: "{{ grafana_ini_path }}"
+        section: "server"
+        option: "domain"
+        value: "{{ grafana_server_name }}"
+        backup: yes
+
+    - name: Ensure grafana.ini has correct root_url
+      ini_file:
+        path: "{{ grafana_ini_path }}"
+        section: "server"
+        option: "root_url"
+        value: "{{ grafana_root_url }}"
+        backup: yes
+        
     - name: Enable and start Grafana service
       systemd:
         name: grafana-server

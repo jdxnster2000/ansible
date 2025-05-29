@@ -1,0 +1,36 @@
+---
+- name: Get certificate from Azure Key Vault and convert to PEM
+  hosts: linuxserver
+  become: yes
+  vars:
+    azure_keyvault_name: "my-keyvault"            # Change to your Key Vault name
+    azure_keyvault_secret: "my-cert"              # Change to your secret name
+    cert_password: "PfxPasswordHere"              # Set if your PFX is password-protected
+    pfx_path: "/etc/ssl/private/mycert.pfx"
+    pem_path: "/etc/ssl/private/mycert.pem"
+
+  tasks:
+    - name: Get PFX certificate from Azure Key Vault
+      set_fact:
+        cert_pfx_b64: "{{ lookup('azure.azcollection.azure_keyvault_secret', azure_keyvault_secret, vault_url='https://' + azure_keyvault_name + '.vault.azure.net/') }}"
+
+    - name: Decode base64 PFX and save to file
+      copy:
+        content: "{{ cert_pfx_b64 | b64decode }}"
+        dest: "{{ pfx_path }}"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Convert PFX to PEM
+      command: >
+        openssl pkcs12 -in {{ pfx_path }} -out {{ pem_path }} -nodes -password pass:{{ cert_password }}
+      args:
+        creates: "{{ pem_path }}"
+
+    - name: Set permissions on PEM file
+      file:
+        path: "{{ pem_path }}"
+        owner: root
+        group: root
+        mode: '0600'

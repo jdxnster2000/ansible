@@ -1,0 +1,146 @@
+---
+- name: Install Prometheus Node Exporter with TLS on Linux or Windows
+  hosts: all
+  become: yes
+  vars:
+    node_exporter_version: "1.8.1"
+    windows_exporter_version: "0.25.1"
+    linux_cert_path: "/etc/node_exporter/node_exporter.crt"
+    linux_key_path: "/etc/node_exporter/node_exporter.key"
+    windows_cert_path: "C:\\Program Files\\windows_exporter\\windows_exporter.crt"
+    windows_key_path: "C:\\Program Files\\windows_exporter\\windows_exporter.key"
+
+  tasks:
+    - name: Check OS type
+      ansible.builtin.setup:
+        gather_subset:
+          - "os_family"
+      register: setup_info
+
+    - name: Install Node Exporter on Linux
+      block:
+        - name: Create node_exporter user
+          user:
+            name: node_exporter
+            shell: /usr/sbin/nologin
+            system: yes
+            create_home: no
+
+        - name: Create cert directory
+          file:
+            path: /etc/node_exporter
+            state: directory
+            owner: node_exporter
+            group: node_exporter
+            mode: "0700"
+
+        - name: Copy certificate and key
+          copy:
+            src: "files/node_exporter.crt"
+            dest: "{{ linux_cert_path }}"
+            owner: node_exporter
+            group: node_exporter
+            mode: "0600"
+        - name: Copy key
+          copy:
+            src: "files/node_exporter.key"
+            dest: "{{ linux_key_path }}"
+            owner: node_exporter
+            group: node_exporter
+            mode: "0600"
+
+        - name: Download node_exporter
+          get_url:
+            url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+            dest: /tmp/node_exporter.tar.gz
+
+        - name: Extract node_exporter
+          unarchive:
+            src: /tmp/node_exporter.tar.gz
+            dest: /tmp/
+            remote_src: yes
+
+        - name: Install node_exporter binary
+          copy:
+            src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+            dest: /usr/local/bin/node_exporter
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Create systemd service for node_exporter with TLS
+          copy:
+            dest: /etc/systemd/system/node_exporter.service
+            mode: "0644"
+            content: |
+              [Unit]
+              Description=Prometheus Node Exporter
+              After=network.target
+
+              [Service]
+              User=node_exporter
+              Group=node_exporter
+              Type=simple
+              ExecStart=/usr/local/bin/node_exporter \
+                --web.listen-address=:9100 \
+                --web.config=/etc/node_exporter/web-config.yml
+
+              [Install]
+              WantedBy=multi-user.target
+
+        - name: Create node_exporter web config for TLS
+          copy:
+            dest: /etc/node_exporter/web-config.yml
+            owner: node_exporter
+            group: node_exporter
+            mode: "0600"
+            content: |
+              tls_server_config:
+                cert_file: "{{ linux_cert_path }}"
+                key_file: "{{ linux_key_path }}"
+
+        - name: Enable and start node_exporter
+          systemd:
+            name: node_exporter
+            enabled: yes
+            state: started
+      when: setup_info.ansible_facts.os_family == "Debian" or setup_info.ansible_facts.os_family == "RedHat"
+
+    - name: Install Windows Exporter on Windows
+      block:
+        - name: Download windows_exporter
+          win_get_url:
+            url: "https://github.com/prometheus-community/windows_exporter/releases/download/v{{ windows_exporter_version }}/windows_exporter-{{ windows_exporter_version }}-amd64.msi"
+            dest: "C:\\Temp\\windows_exporter.msi"
+
+        - name: Install windows_exporter
+          win_package:
+            path: "C:\\Temp\\windows_exporter.msi"
+            state: present
+
+        - name: Copy certificate and key
+          win_copy:
+            src: "files/windows_exporter.crt"
+            dest: "{{ windows_cert_path }}"
+          # Repeat for key
+        - name: Copy key
+          win_copy:
+            src: "files/windows_exporter.key"
+            dest: "{{ windows_key_path }}"
+
+        - name: Set windows_exporter to use HTTPS
+          win_service:
+            name: windows_exporter
+            state: stopped
+
+        - name: Configure windows_exporter HTTPS (edit service args)
+          win_command: >
+            sc.exe config windows_exporter binPath= "\"C:\Program Files\windows_exporter\windows_exporter.exe\" --telemetry.addr=:9100 --tls.cert-file={{ windows_cert_path }} --tls.key-file={{ windows_key_path }}"
+          args:
+            creates: "{{ windows_cert_path }}"
+
+        - name: Start windows_exporter
+          win_service:
+            name: windows_exporter
+            state: started
+      when: setup_info.ansible_facts.os_family == "Windows"
