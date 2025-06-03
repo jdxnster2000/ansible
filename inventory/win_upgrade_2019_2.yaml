@@ -1,31 +1,68 @@
 ---
 - name: In-place upgrade Windows Server 2016 to 2019
-  hosts: winserver
-  gather_facts: no
+  gather_facts: yes
   vars:
-    iso_url: "C:\\17763.3650.221105-1748.rs5_release_svc_refresh_SERVER_EVAL_x64FRE_en-us.iso"  # Update this path
-    iso_dest: "C:\\Windows_Server_2019.iso"
-    mount_drive: "E:"
+    azure_fileshare: "\\\\<storageaccount>.file.core.windows.net\\<sharename>"  # Replace with your Azure File Share UNC path
+    mount_drive: "Z:"
+    azure_username: "<storageaccount>"  # Replace with your storage account name
+    azure_password: "<storageaccountkey>"  # Replace with your storage account key
+
   tasks:
-#    - name: Copy Windows Server 2019 ISO to server
-#      win_copy:
-#        src: "{{ iso_url }}"
-#        dest: "{{ iso_dest }}"
+    - name: Check if host is Windows
+      when: ansible_os_family == "Windows"
 
-#    - name: Mount ISO
-#      win_disk_image:
-#        image_path: "{{ iso_url }}"
-#        state: present
+    - name: Stop playbook if not Windows
+      debug:
+        msg: "This host is not a Windows OS. Host OS detected as {{ ansible_os_family }}"
+      meta: end_play
+      when: ansible_os_family != "Windows"
 
-#    - name: Create temp folder if it doesn't exist
-#      ansible.windows.win_file:
-#        path: C:\Temp
-#        state: directory
+    - name: Get Pre Upgrade Windows Product Name
+      ansible.windows.win_shell: |
+        (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ProductName
+      register: win_product_name
+
+    - name: Display Pre Upgrade Windows Product Name
+      debug:
+        var: win_product_name.stdout
+
+    - name: Stop playbook if not Windows Server 2016 or 2016 Datacenter
+      debug:
+        msg: "Host is not Windows 2016 - Windows Product Name: {{ win_product_name.stdout }}"
+      meta: end_play
+      when: win_product_name.stdout is not search("Windows Server 2016")       
+
+    - name: Get free space on C drive
+      ansible.windows.win_shell: |
+        (Get-PSDrive -Name C).Free
+      register: c_drive_free
+  
+    - name: Stop playbook if less than 5GB free on C: drive
+      debug:
+        msg: "Insufficient free space on C: drive: {{ c_drive_free.stdout | int | human_readable(size=True) }}"
+      meta: end_play
+      when: (c_drive_free.stdout | int) < 5368709120 
+
+    - name: Add Azure File Share credentials with cmdkey
+      ansible.windows.win_command: >
+        cmdkey /add:{{ azure_fileshare }} /user:{{ azure_username }} /pass:{{ azure_password }}
+
+    - name: Map Azure File Share to drive letter
+      ansible.windows.win_command: >
+        net use {{ mount_drive }} {{ azure_fileshare }} /persistent:yes
+
+    - name: Show mapped drives
+      ansible.windows.win_command: net use
+      register: mapped_drives
+
+    - name: Display mapped drives
+      debug:
+        var: mapped_drives.stdout
 
     - name: get computer information
       ansible.windows.win_powershell:
         script: |
-           Get-ComputerInfo -Property WindowsBuildLabEx,WindowsEditionID | Out-File -FilePath C:\temp\computerinfo.txt
+          Get-ComputerInfo -Property WindowsBuildLabEx,WindowsEditionID | Out-File -FilePath C:\temp\computerinfo.txt
 
     - name: get system information
       ansible.windows.win_powershell:
@@ -37,17 +74,40 @@
         script: |
           ipconfig /all | Out-File -FilePath C:\temp\ipconfig.txt
 
-#    - name: Start in-place upgrade (unattended)
-#      win_command: >
-#        {{ mount_drive }}\\setup.exe /auto upgrade /quiet /noreboot /dynamicupdate enable /compat ignorewarning
-#      args:
-#        creates: "C:\\$WINDOWS.~BT"
+    - name: Run command for Windows Server 2016 Standard
+      ansible.windows.win_command: {{ mount_drive }} \setup.exe /auto upgrade /quiet /noreboot /dynamicupdate enable /compat ignorewarning /imageindex 2
+      when:
+        - win_product_name.stdout is search("Windows Server 2016")
+        - win_product_name.stdout is not search("Datacenter")
 
-#    - name: Reboot for upgrade
-#      win_reboot:
-#        reboot_timeout: 7200
-#        msg: "Rebooting for Windows Server upgrade..."
-#
-#    - name: Wait for server to finish upgrade and come back online
-#      wait_for_connection:
-#        timeout: 3600
+    - name: Run command for Windows Server 2016 Datacenter
+      ansible.windows.win_command: {{ mount_drive }} \setup.exe /auto upgrade /quiet /noreboot /dynamicupdate enable /compat ignorewarning /imageindex 4
+      when: win_product_name.stdout is search("Windows Server 2016 Datacenter")
+
+    - name: Reboot for upgrade
+      win_reboot:
+        reboot_timeout: 7200
+        msg: "Rebooting for Windows Server upgrade..."
+
+    - name: Wait for server to finish upgrade and come back online
+      wait_for_connection:
+        timeout: 3600
+
+    - name: Remove Azure File Share credentials
+       ansible.windows.win_command: cmdkey /delete:{{ azure_fileshare }}
+
+    - name: Remove mapped drive 
+      ansible.windows.win_command: net use {{ mount_drive }} /delete
+    - name: Show final mapped drives
+      ansible.windows.win_command: net use
+      register: final_mapped_drives
+
+    - name: Get Post Upgrade Windows Product Name
+      ansible.windows.win_shell: |
+        (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").ProductName
+      register: win_product_name
+
+    - name: Display Post Upgrade Windows Product Name
+      debug:
+        var: win_product_name.stdout
+
